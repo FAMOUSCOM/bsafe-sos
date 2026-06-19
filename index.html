@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOS Alert - bSafe</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F5F5F5;color:#1A1A1A}
+.top{padding:48px 16px 20px;text-align:center}
+.top h1{color:#fff;font-size:18px;font-weight:800;letter-spacing:1px}
+.top .sub{color:rgba(255,255,255,.85);font-size:13px;margin-top:6px}
+.badge{display:inline-block;background:rgba(255,255,255,.2);color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:12px;margin-top:10px;letter-spacing:.5px}
+.card{background:#fff;margin:12px 16px;border-radius:14px;overflow:hidden;border:1px solid #EFEFEF}
+.card-title{font-size:11px;font-weight:700;letter-spacing:1px;color:#9E9E9E;padding:14px 14px 8px}
+#map{height:220px;width:100%}
+.last-seen{padding:10px 14px;font-size:13px;color:#666;border-top:1px solid #F3F3F3}
+.last-seen strong{color:#1A1A1A}
+.live-dot{display:inline-block;width:6px;height:6px;border-radius:3px;background:#C62828;margin-right:6px;animation:pulse 1.5s infinite}
+.detail{padding:10px 14px;display:flex;justify-content:space-between;border-bottom:1px solid #F3F3F3}
+.detail:last-child{border-bottom:none}
+.detail .lbl{font-size:12px;color:#9E9E9E;font-weight:600}
+.detail .val{font-size:13px;font-weight:700;text-align:right;max-width:60%}
+.maps-btn{display:block;margin:12px 16px;background:#C62828;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;text-align:center}
+.footer{text-align:center;padding:20px;font-size:11px;color:#BDBDBD}
+.footer a{color:#C62828;text-decoration:none;font-weight:700}
+.pulse-dot{display:inline-block;width:8px;height:8px;border-radius:4px;background:#fff;margin-right:8px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.loading{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:10px;color:#999;font-size:13px}
+.error{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:8px;color:#666;font-size:14px;text-align:center;padding:40px}
+.error h1{font-size:48px;color:#E0E0E0;font-weight:300}
+</style>
+</head>
+<body>
+<div id="app" class="loading">Loading SOS alert...</div>
+
+<script>
+var API_URL='https://fwdnmkezwvmessblbbpk.supabase.co/functions/v1/sos-link';
+var params=new URLSearchParams(window.location.search);
+var linkId=params.get('id');
+
+if(!linkId){
+  document.getElementById('app').innerHTML='<div class="error"><h1>404</h1><p>Missing SOS link ID.</p></div>';
+}else{
+  loadSOS();
+}
+
+function timeAgo(iso){
+  var ms=Date.now()-new Date(iso).getTime();
+  var m=Math.floor(ms/60000);
+  if(m<1)return'just now';
+  if(m<60)return m+'m ago';
+  var h=Math.floor(m/60);
+  if(h<24)return h+'h ago';
+  return Math.floor(h/24)+'d ago';
+}
+
+function loadSOS(){
+  fetch(API_URL+'?id='+linkId)
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(d.error){
+        document.getElementById('app').innerHTML='<div class="error"><h1>404</h1><p>This SOS link has expired or doesn\'t exist.</p></div>';
+        return;
+      }
+      renderSOS(d);
+      if(d.status==='active'){
+        setInterval(function(){
+          fetch(API_URL+'?id='+linkId).then(function(r){return r.json()}).then(function(u){
+            if(u&&!u.error)renderSOS(u);
+          }).catch(function(){});
+        },15000);
+      }
+    })
+    .catch(function(){
+      document.getElementById('app').innerHTML='<div class="error"><h1>!</h1><p>Could not load SOS alert. Check your connection.</p></div>';
+    });
+}
+
+function renderSOS(d){
+  var isActive=d.status==='active';
+  var hasLoc=d.lat!=null&&d.lng!=null;
+  var ev=d.evidence||{};
+  var created=new Date(d.created_at).toLocaleString();
+
+  var html='<div class="top" style="background:'+(isActive?'#C62828':'#388E3C')+'">';
+  html+='<h1>'+(isActive?'<span class="pulse-dot"></span>SOS ACTIVE':'SOS RESOLVED')+'</h1>';
+  html+='<div class="sub">'+esc(d.user_name)+' triggered an emergency alert</div>';
+  html+='<div class="badge">'+esc(created)+'</div></div>';
+
+  if(hasLoc){
+    html+='<div class="card"><div class="card-title">LOCATION</div><div id="map"></div>';
+    html+='<div class="last-seen" id="last-seen">'+(isActive?'<span class="live-dot"></span>':'')+'Locating...</div></div>';
+  }
+
+  // Details
+  html+='<div class="card"><div class="card-title">DETAILS</div>';
+  var fields=[
+    ['mode','Mode'],['reason','Reason'],['personName','Meeting'],['placeName','Going to'],
+    ['officerType','Officer type'],['officerCount','Officer count'],['plateNumber','Vehicle plate'],
+    ['clothing','Clothing'],['badgeNumber','Badge/ID'],['stationName','Station'],['notes','Notes']
+  ];
+  fields.forEach(function(f){
+    if(ev[f[0]])html+='<div class="detail"><span class="lbl">'+f[1]+'</span><span class="val">'+esc(String(ev[f[0]]))+'</span></div>';
+  });
+  html+='<div class="detail"><span class="lbl">Status</span><span class="val" style="color:'+(isActive?'#C62828':'#388E3C')+'">'+(isActive?'ACTIVE':'Resolved')+'</span></div>';
+  html+='<div class="detail"><span class="lbl">Triggered</span><span class="val">'+timeAgo(d.created_at)+'</span></div>';
+  html+='</div>';
+
+  if(hasLoc){
+    html+='<a class="maps-btn" href="https://maps.google.com/?q='+d.lat+','+d.lng+'" target="_blank">Open in Google Maps</a>';
+  }
+
+  html+='<div class="footer">Sent via <a href="#">bSafe</a> &mdash; Personal safety for Nigeria</div>';
+
+  document.getElementById('app').className='';
+  document.getElementById('app').innerHTML=html;
+
+  if(hasLoc){
+    var map=L.map('map').setView([d.lat,d.lng],15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OSM'}).addTo(map);
+    L.circleMarker([d.lat,d.lng],{radius:10,color:'#C62828',fillColor:'#E53935',fillOpacity:.8,weight:2}).addTo(map);
+
+    fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+d.lat+'&lon='+d.lng+'&zoom=16')
+      .then(function(r){return r.json()})
+      .then(function(geo){
+        var el=document.getElementById('last-seen');
+        if(!el)return;
+        var addr=(geo.display_name||'').split(',').slice(0,3).join(',');
+        var now=new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'});
+        el.innerHTML=(isActive?'<span class="live-dot"></span>':'')+'Last seen at <strong>'+addr+'</strong> &middot; '+now;
+      }).catch(function(){});
+  }
+}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+</script>
+</body>
+</html>
