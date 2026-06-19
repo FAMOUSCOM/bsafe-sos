@@ -109,6 +109,11 @@ function renderSOS(d){
   html+='<div class="detail"><span class="lbl">Triggered</span><span class="val">'+timeAgo(d.created_at)+'</span></div>';
   html+='</div>';
 
+  if(ev.audioUrl){
+    html+='<div class="card"><div class="card-title">AUDIO RECORDING</div>';
+    html+='<div style="padding:12px 14px"><audio controls style="width:100%" src="'+esc(ev.audioUrl)+'"></audio></div></div>';
+  }
+
   if(hasLoc){
     html+='<a class="maps-btn" href="https://maps.google.com/?q='+d.lat+','+d.lng+'" target="_blank">Open in Google Maps</a>';
   }
