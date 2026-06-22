@@ -109,9 +109,24 @@ function renderSOS(d){
   html+='<div class="detail"><span class="lbl">Triggered</span><span class="val">'+timeAgo(d.created_at)+'</span></div>';
   html+='</div>';
 
-  if(ev.audioUrl){
-    html+='<div class="card"><div class="card-title">AUDIO RECORDING</div>';
-    html+='<div style="padding:12px 14px"><audio controls style="width:100%" src="'+esc(ev.audioUrl)+'"></audio></div></div>';
+  if(ev.photos && ev.photos.length){
+    html+='<div class="card"><div class="card-title">EVIDENCE PHOTOS · '+ev.photos.length+'</div>';
+    html+='<div style="display:flex;overflow-x:auto;gap:8px;padding:12px 14px">';
+    for(var pi=0;pi<ev.photos.length;pi++){
+      html+='<a href="'+esc(ev.photos[pi])+'" target="_blank"><img src="'+esc(ev.photos[pi])+'" style="width:140px;height:180px;object-fit:cover;border-radius:10px;background:#eee"></a>';
+    }
+    html+='</div></div>';
+  }
+
+  var segs = (ev.audioSegments && ev.audioSegments.length) ? ev.audioSegments : (ev.audioUrl ? [ev.audioUrl] : []);
+  if(segs.length){
+    html+='<div class="card"><div class="card-title">AUDIO RECORDING'+(segs.length>1?' · '+segs.length+' segments':'')+'</div>';
+    html+='<div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">';
+    for(var ai=0;ai<segs.length;ai++){
+      if(segs.length>1) html+='<div style="font-size:11px;font-weight:700;color:#9E9E9E;letter-spacing:1px">SEGMENT '+(ai+1)+'</div>';
+      html+='<audio controls style="width:100%" src="'+esc(segs[ai])+'"></audio>';
+    }
+    html+='</div></div>';
   }
 
   if(hasLoc){
