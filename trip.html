@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trip Tracking - bSafe</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F5F5F5;color:#1A1A1A}
+.top{padding:48px 16px 20px;text-align:center;background:#0F2540;color:#fff}
+.top h1{font-size:18px;font-weight:800;letter-spacing:1px}
+.top .sub{font-size:13px;margin-top:6px;color:rgba(255,255,255,.85)}
+.badge{display:inline-block;background:rgba(255,255,255,.15);font-size:11px;font-weight:700;padding:4px 12px;border-radius:12px;margin-top:10px;letter-spacing:.5px}
+.card{background:#fff;margin:12px 16px;border-radius:14px;overflow:hidden;border:1px solid #EFEFEF}
+.card-title{font-size:11px;font-weight:700;letter-spacing:1px;color:#9E9E9E;padding:14px 14px 8px}
+#map{height:260px;width:100%}
+.row{padding:10px 14px;display:flex;justify-content:space-between;border-bottom:1px solid #F3F3F3}
+.row:last-child{border-bottom:none}
+.lbl{font-size:12px;color:#9E9E9E;font-weight:600}
+.val{font-size:13px;font-weight:700;text-align:right;max-width:60%}
+.maps-btn{display:block;margin:12px 16px;background:#0F2540;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;font-size:14px;text-align:center}
+.footer{text-align:center;padding:20px;font-size:11px;color:#BDBDBD}
+.live-dot{display:inline-block;width:6px;height:6px;border-radius:3px;background:#4CAF50;margin-right:6px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.loading,.error{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:10px;color:#999;font-size:13px;text-align:center;padding:20px}
+.error h1{font-size:48px;color:#E0E0E0;font-weight:300}
+</style>
+</head>
+<body>
+<div id="app" class="loading">Loading trip…</div>
+
+<script>
+var API='https://fwdnmkezwvmessblbbpk.supabase.co/functions/v1/trip-link';
+var id=new URLSearchParams(location.search).get('id');
+if(!id){document.getElementById('app').innerHTML='<div class="error"><h1>404</h1><p>Missing trip ID.</p></div>';}else{load();}
+
+function timeAgo(iso){var m=Math.floor((Date.now()-new Date(iso).getTime())/60000);if(m<1)return'just now';if(m<60)return m+'m ago';var h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
+function fmtTime(iso){try{return new Date(iso).toLocaleString('en-NG',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Africa/Lagos'});}catch(e){return'—';}}
+
+function load(){
+  fetch(API+'?id='+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){
+    if(d.error){document.getElementById('app').innerHTML='<div class="error"><h1>404</h1><p>'+d.error+'</p></div>';return;}
+    render(d);
+  }).catch(function(){document.getElementById('app').innerHTML='<div class="error"><p>Could not load trip.</p></div>';});
+}
+
+function render(d){
+  var t=d.trip;var loc=d.location;var name=d.userName;
+  var statusBadge=t.status==='active'?'<span class="live-dot"></span>LIVE TRIP':t.status==='arrived'?'✓ ARRIVED SAFELY':'TRIP ENDED';
+  var eta=t.eta_iso?fmtTime(t.eta_iso):'—';
+  var headerColor=t.status==='active'?'#0F2540':t.status==='arrived'?'#1B5E20':'#555';
+  var html='<div class="top" style="background:'+headerColor+'">'
+    +'<h1>'+escapeHtml(name)+' is traveling</h1>'
+    +'<div class="sub">to '+escapeHtml(t.destination_label)+'</div>'
+    +'<div class="badge">'+statusBadge+'</div></div>';
+  if(loc&&t.status==='active'){
+    html+='<div class="card"><div id="map"></div></div>';
+  }
+  html+='<div class="card"><div class="card-title">TRIP DETAILS</div>'
+    +'<div class="row"><div class="lbl">Destination</div><div class="val">'+escapeHtml(t.destination_label)+'</div></div>'
+    +'<div class="row"><div class="lbl">ETA</div><div class="val">'+eta+'</div></div>'
+    +'<div class="row"><div class="lbl">Started</div><div class="val">'+fmtTime(t.started_at)+'</div></div>';
+  if(loc){
+    html+='<div class="row"><div class="lbl">Last location</div><div class="val">'+escapeHtml(loc.street||loc.city||(loc.lat.toFixed(4)+', '+loc.lng.toFixed(4)))+'</div></div>'
+      +'<div class="row"><div class="lbl">Updated</div><div class="val">'+timeAgo(loc.updated_at)+'</div></div>';
+  }
+  html+='</div>';
+  if(loc){
+    html+='<a class="maps-btn" target="_blank" href="https://www.google.com/maps?q='+loc.lat+','+loc.lng+'">OPEN IN GOOGLE MAPS</a>';
+  }
+  html+='<div class="footer">Powered by <a href="#" style="color:#0F2540;font-weight:700;text-decoration:none">bSafe</a></div>';
+  var app=document.getElementById('app');app.className='';app.innerHTML=html;
+  if(loc&&t.status==='active'){
+    var map=L.map('map').setView([loc.lat,loc.lng],14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:''}).addTo(map);
+    L.circleMarker([loc.lat,loc.lng],{radius:9,color:'#fff',weight:3,fillColor:'#0F2540',fillOpacity:1}).addTo(map);
+    if(t.dest_lat&&t.dest_lng){
+      L.marker([t.dest_lat,t.dest_lng]).addTo(map).bindPopup('Destination');
+      map.fitBounds([[loc.lat,loc.lng],[t.dest_lat,t.dest_lng]],{padding:[40,40]});
+    }
+    setTimeout(load,30000);
+  }
+}
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+</script>
+</body>
+</html>
