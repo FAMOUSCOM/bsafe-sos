@@ -79,11 +79,15 @@ function loadSOS(){
     });
 }
 
+var LOCATION_FRESH_MS=90000; // location must have been written in the last 90s to count as "live"
+
 function renderSOS(d){
   var isActive=d.status==='active';
   var hasLoc=d.lat!=null&&d.lng!=null;
   var ev=d.evidence||{};
   var created=new Date(d.created_at).toLocaleString();
+  var locAgeMs=d.location_updated_at?(Date.now()-new Date(d.location_updated_at).getTime()):Infinity;
+  var isLive=isActive&&locAgeMs<LOCATION_FRESH_MS;
 
   var html='<div class="top" style="background:'+(isActive?'#C62828':'#388E3C')+'">';
   html+='<h1>'+(isActive?'<span class="pulse-dot"></span>SOS ACTIVE':'SOS RESOLVED')+'</h1>';
@@ -92,7 +96,7 @@ function renderSOS(d){
 
   if(hasLoc){
     html+='<div class="card"><div class="card-title">LOCATION</div><div id="map"></div>';
-    html+='<div class="last-seen" id="last-seen">'+(isActive?'<span class="live-dot"></span>':'')+'Locating...</div></div>';
+    html+='<div class="last-seen" id="last-seen">'+(isLive?'<span class="live-dot"></span>':'')+'Locating...</div></div>';
   }
 
   // Details
@@ -149,8 +153,10 @@ function renderSOS(d){
         var el=document.getElementById('last-seen');
         if(!el)return;
         var addr=(geo.display_name||'').split(',').slice(0,3).join(',');
-        var now=new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'});
-        el.innerHTML=(isActive?'<span class="live-dot"></span>':'')+'Last seen at <strong>'+addr+'</strong> &middot; '+now;
+        var whenLabel=d.location_updated_at?timeAgo(d.location_updated_at):'unknown time';
+        el.innerHTML=isLive
+          ?('<span class="live-dot"></span>Live at <strong>'+addr+'</strong>')
+          :('Last seen at <strong>'+addr+'</strong> &middot; '+whenLabel+(isActive?' (offline — sending SMS updates)':''));
       }).catch(function(){});
   }
 }
